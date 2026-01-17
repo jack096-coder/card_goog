@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>OMR 全圖座標驗證</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: sans-serif;
+            background-color: #e9ecef;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        /* 頂部控制列 */
+        .toolbar {
+            width: 100%;
+            max-width: 1200px;
+            background: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        /* 畫布容器：確保不分割且完整顯示 */
+        #canvas-container {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            overflow: hidden;
+        }
+        canvas {
+            /* 關鍵：確保圖形完整縮放顯示在螢幕內 */
+            max-width: 100%;
+            height: auto; 
+            border: 2px solid #333;
+            background-color: white;
+            box-shadow: 0 5px 25px rgba(0,0,0,0.2);
+        }
+        .btn {
+            background: #28a745;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .btn:hover { background: #218838; }
+        .stats { font-size: 14px; color: #555; }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <div>
+            <strong style="font-size: 1.2em;">答案卡完整預覽</strong>
+            <span class="stats" id="infoText"> — 請上傳圖檔</span>
+        </div>
+        <label for="imageInput" class="btn">選取答案卡圖片</label>
+        <input type="file" id="imageInput" accept="image/*" style="display:none">
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="omrCanvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('omrCanvas');
+        const ctx = canvas.getContext('2d');
+        const imageInput = document.getElementById('imageInput');
+
+        // 定位點數據
+        const anchorData = [
+            ["定位-左上", 70, 67, 60, 53],
+            ["定位-右上", 1808, 67, 60, 53],
+            ["定位-左下", 70, 2080, 60, 53],
+            ["定位-右下", 1808, 2080, 60, 53]
+        ];
+
+
+
+        // 泡泡數據字串 (CSV 格式)
+        const bubbleDataRaw = `1,300,389,21,一年級,
+2,300,446,18,班級十位數0,
+3,298,504,20,班級個位數0,
+4,298,561,20,座號十位數0,
+5,300,619,20,座號個位數0,
+6,354,387,20,二年級,
+7,354,446,21,班級十位數1,
+8,353,504,22,班級個位數1,
+9,354,561,19,座號十位數1,
+10,354,618,21,座號個位數1,
+11,409,387,20,三年級,
+12,409,445,20,班級十位數2,
+13,408,503,21,班級個位數2,
+14,410,560,20,座號十位數2,
+15,408,617,22,座號個位數2,
+16,463,445,20,班級十位數3,
+17,463,503,21,班級個位數3,
+18,463,561,22,座號十位數3,
+19,464,619,20,座號個位數3,
+20,518,446,19,班級十位數4,
+21,518,504,18,班級個位數4,
+22,519,561,20,座號十位數4,
+23,518,619,20,座號個位數4,
+24,572,446,21,班級十位數5,
+25,571,502,20,班級個位數5,
+26,572,559,20,座號十位數5,
+27,572,616,20,座號十位數5,
+28,626,447,21,班級十位數6,
+29,627,503,21,班級個位數6,
+30,627,560,21,座號十位數6,
+31,628,618,20,座號個位數6,
+32,680,446,21,班級十位數7,
+33,681,503,21,班級個位數7,
+34,681,560,21,座號十位數7,
+35,680,617,21,座號個位數7,
+36,736,446,19,班級十位數8,
+37,737,503,20,班級個位數8,
+38,736,560,21,座號十位數8,
+39,737,618,20,座號個位數8,
+40,790,446,21,班級十位數9,
+41,789,502,20,班級個位數9,
+42,790,562,20,座號十位數9,
+43,788,617,20,座號個位數9,
+44,213,739,19,left,
+45,214,801,19,left,
+46,214,864,21,left,
+47,214,927,19,left,
+48,213,991,21,left,
+49,214,1055,19,left,
+50,215,1118,20,left,
+51,214,1182,21,left,
+52,212,1244,20,left,
+53,215,1308,20,left,
+54,214,1371,18,left,
+55,214,1434,19,left,
+56,212,1497,20,left,
+57,213,1560,21,left,
+58,214,1624,21,left,
+59,214,1687,21,left,
+60,215,1749,20,left,
+61,212,1812,20,left,
+62,214,1876,21,left,
+63,213,1939,19,left,
+64,268,740,20,left,
+65,268,802,19,left,
+66,268,864,21,left,
+67,268,928,19,left,
+68,267,991,21,left,
+69,268,1056,20,left,
+70,267,1181,21,left,
+71,269,1245,20,left,
+72,268,1309,20,left,
+73,266,1371,20,left,
+74,269,1434,20,left,
+75,268,1497,18,left,
+76,268,1561,21,left,
+77,267,1687,21,left,
+78,267,1750,19,left,
+79,268,1812,21,left,
+80,267,1875,20,left,
+81,268,1941,20,left,
+82,321,801,20,left,
+83,322,864,21,left,
+84,324,927,20,left,
+85,322,991,19,left,
+86,321,1055,19,left,
+87,321,1118,20,left,
+88,322,1181,19,left,
+89,324,1244,20,left,
+90,322,1307,19,left,
+91,322,1371,20,left,true
+92,323,1434,19,left,
+93,322,1434,20,left,true
+94,324,1496,20,left,
+95,321,1560,20,left,
+96,322,1624,19,left,
+97,322,1687,19,left,
+98,323,1749,19,left,
+99,323,1812,21,left,
+100,321,1876,20,left,
+101,322,1939,19,left,
+102,377,739,18,left,
+103,377,801,20,left,true
+104,377,866,20,left,
+105,377,926,20,left,
+106,377,989,20,left,
+107,377,1055,21,left,
+108,375,1118,20,left,
+109,376,1181,21,left,
+110,377,1244,19,left,
+111,377,1307,20,left,true
+112,378,1370,20,left,
+113,377,1434,18,left,
+114,379,1498,20,left,
+115,376,1560,21,left,
+116,377,1623,19,left,
+117,377,1687,20,left,true
+118,377,1750,19,left,
+119,377,1813,19,left,
+120,377,1876,21,left,
+121,377,1939,20,left,true
+122,430,739,20,left,
+123,432,801,19,left,
+124,432,865,19,left,
+125,432,927,19,left,
+126,431,991,21,left,
+127,432,1056,20,left,
+128,434,1118,20,left,
+129,431,1179,20,left,
+130,433,1242,20,left,
+131,431,1307,19,left,
+132,432,1371,19,left,
+133,430,1434,20,left,
+134,432,1497,20,left,true
+135,432,1559,21,left,
+136,432,1625,20,left,
+137,432,1685,20,left,
+138,433,1749,21,left,
+139,430,1813,20,left,
+140,432,1812,20,left,true
+141,431,1876,21,left,
+142,432,1939,21,left,
+143,599,740,20,right,
+144,598,803,20,right,
+145,598,863,20,right,
+146,598,927,18,right,
+147,598,989,20,right,
+148,598,1056,20,right,
+149,598,1117,19,right,
+150,598,1180,21,right,
+151,599,1244,19,right,
+152,598,1307,21,right,
+153,597,1371,21,right,
+154,598,1434,18,right,
+155,597,1497,21,right,
+156,596,1560,20,right,
+157,598,1622,20,right,
+158,598,1688,20,right,
+159,598,1750,18,right,
+160,598,1811,20,right,
+161,596,1876,20,right,
+162,598,1940,21,right,
+163,653,737,20,right,
+164,653,803,20,right,
+165,652,864,21,right,
+166,652,927,19,right,
+167,652,991,21,right,
+168,653,1055,19,right,
+169,653,1117,21,right,
+170,652,1181,21,right,
+171,651,1244,20,right,
+172,653,1307,21,right,
+173,653,1371,18,right,
+174,653,1434,19,right,
+175,652,1497,19,right,
+176,653,1623,21,right,
+177,653,1687,19,right,
+178,653,1750,19,right,
+179,653,1811,20,right,
+180,652,1876,21,right,
+181,652,1938,21,right,
+182,707,738,21,right,
+183,707,802,19,right,
+184,707,865,21,right,
+185,707,928,19,right,
+186,707,991,21,right,
+187,709,1055,20,right,
+188,707,1118,19,right,
+189,707,1181,21,right,
+190,707,1243,21,right,
+191,705,1307,20,right,
+192,705,1371,20,right,
+193,705,1434,20,right,
+194,707,1497,18,right,
+195,706,1560,21,right,
+196,707,1624,19,right,
+197,707,1686,21,right,
+198,707,1749,21,right,
+199,707,1812,21,right,
+200,707,1875,21,right,
+201,707,1939,21,right,
+202,762,739,21,right,
+203,760,802,20,right,
+204,762,865,21,right,
+205,762,928,19,right,
+206,762,989,20,right,
+207,762,1055,21,right,
+208,762,1116,20,right,
+209,761,1181,21,right,
+210,762,1242,20,right,
+211,762,1307,18,right,
+212,760,1371,20,right,
+213,762,1434,18,right,
+214,762,1497,21,right,
+215,761,1560,21,right,
+216,762,1626,21,right,
+217,762,1687,20,right,true
+218,764,1751,21,right,
+219,762,1813,19,right,
+220,761,1875,22,right,
+221,762,1939,19,right,
+222,816,737,20,right,
+223,816,801,19,right,
+224,816,864,18,right,
+225,816,927,19,right,
+226,817,990,21,right,
+227,816,1055,21,right,
+228,816,1117,21,right,
+229,816,1179,20,right,
+230,816,1244,18,right,
+231,816,1307,18,right,
+232,815,1371,21,right,
+233,816,1434,18,right,
+234,816,1497,18,right,
+235,816,1558,20,right,
+236,816,1623,19,right,
+237,816,1688,20,right,
+238,816,1750,21,right,
+239,816,1812,21,right,
+240,816,1876,21,right,
+241,817,1939,22,right,
+242,322,740,20,left,
+243,268,740,20,left`;
+
+        function parseBubbles(raw) {
+            return raw.trim().split('\n').map(line => {
+                const cols = line.split(',');
+                return {
+                    x: parseInt(cols[1]),
+                    y: parseInt(cols[2]),
+                    r: parseInt(cols[3]),
+                    isMarked: cols[5] === 'true'
+                };
+            });
+        }
+
+        const bubbles = parseBubbles(bubbleDataRaw);
+
+        imageInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    // 設定 Canvas 原始大小為圖片解析度
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    
+                    // 繪製背景
+                    ctx.drawImage(img, 0, 0);
+                    
+                    // 繪製定位框
+                    ctx.strokeStyle = "red";
+                    ctx.lineWidth = 4;
+                    anchorData.forEach(([name, cx, cy, w, h]) => {
+                        ctx.strokeRect(cx - w/2, cy - h/2, w, h);
+                    });
+
+                    // 繪製所有泡泡
+                    ctx.lineWidth = 2;
+                    bubbles.forEach(b => {
+                        ctx.beginPath();
+                        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+                        if (b.isMarked) {
+                            ctx.fillStyle = "rgba(255, 0, 0, 0.4)";
+                            ctx.fill();
+                        }
+                        ctx.strokeStyle = "red";
+                        ctx.stroke();
+                    });
+
+                    document.getElementById('infoText').innerText = ` — 解析度: ${img.width}x${img.height} | 已繪製 4 定位點, ${bubbles.length} 泡泡`;
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    </script>
+</body>
+</html>
